@@ -3,13 +3,11 @@ import threading
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import padding
-import os
 
 # Define server details
 HOST = '127.0.0.1'
-PORT = 1337
+PORT = 65432
 KEY = b'12341234123412341234123412341234'  # Shared AES key (32 bytes for AES-256)
-IV = os.urandom(16)  # Initialization vector (16 bytes)
 
 # Function to encrypt the message using AES
 def encrypt_message(message, iv):
@@ -35,7 +33,7 @@ def decrypt_message(encrypted_message, iv):
     return unpadded_message.decode()
 
 # Function to handle receiving messages from the server
-def receive_messages(client_socket):
+def receive_messages(client_socket, session_iv):
     while True:
         try:
             # Receive encrypted message from the server
@@ -44,9 +42,7 @@ def receive_messages(client_socket):
                 break
 
             # Decrypt the message and display it
-            iv = encrypted_message[:16]  # Extract IV from the message
-            encrypted_text = encrypted_message[16:]  # Extract the encrypted text
-            message = decrypt_message(encrypted_text, iv)
+            message = decrypt_message(encrypted_message, session_iv)
             print(f"New message: {message}")
 
         except Exception as e:
@@ -54,7 +50,7 @@ def receive_messages(client_socket):
             break
 
 # Function to send messages to the server
-def send_messages(client_socket):
+def send_messages(client_socket, session_iv):
     while True:
         try:
             message = input("You: ")
@@ -62,10 +58,10 @@ def send_messages(client_socket):
                 break
 
             # Encrypt the message
-            encrypted_message = encrypt_message(message, IV)
+            encrypted_message = encrypt_message(message, session_iv)
 
-            # Send the IV + encrypted message to the server
-            client_socket.sendall(IV + encrypted_message)
+            # Send the encrypted message to the server
+            client_socket.sendall(encrypted_message)
 
         except Exception as e:
             print(f"Error sending message: {e}")
@@ -78,12 +74,16 @@ def client_program():
             client_socket.connect((HOST, PORT))
             print(f"Connected to server at {HOST}:{PORT}")
 
+            # Receive IV from the server as part of the handshake
+            session_iv = client_socket.recv(16)
+            print("Session IV received.")
+
             # Start a thread to receive messages
-            receive_thread = threading.Thread(target=receive_messages, args=(client_socket,))
+            receive_thread = threading.Thread(target=receive_messages, args=(client_socket, session_iv))
             receive_thread.start()
 
             # Start sending messages
-            send_messages(client_socket)
+            send_messages(client_socket, session_iv)
 
         except Exception as e:
             print(f"An error occurred: {e}")
